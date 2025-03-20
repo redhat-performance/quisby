@@ -135,6 +135,8 @@ def create_summary_passmark_data(data, OS_RELEASE):
                 except Exception as exc:
                     gmean_data.append(0.0)  # Default to 0.0 for non-numeric values
             gdata = gmean(gmean_data)
+            if float(gdata) == 0.0:
+                custom_logger.warning("Gmean calculates to '0' for instance ", inst)
             try:
                 cph, pp = calc_price_performance(inst, gdata)
             except Exception as exc:

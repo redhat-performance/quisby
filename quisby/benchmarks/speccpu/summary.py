@@ -86,9 +86,13 @@ def create_summary_speccpu_data(results, OS_RELEASE):
                     f_gmean.append(float(item[i][1]))
             if i_gmean:
                 i_gmean = gmean(i_gmean)
+                if float(i_gmean) == 0.0:
+                    custom_logger.warning("Intrate Gmean calculates to '0' for instance " ,item[0][0])
                 gmean_results_intrate.append([item[0][0], i_gmean])
             if f_gmean:
                 f_gmean = gmean(f_gmean)
+                if float(f_gmean) == 0.0:
+                    custom_logger.warning("Fprate Gmean calculates to '0' for instance ", item[0][0])
                 gmean_results_fprate.append([item[0][0], f_gmean])
 
             cphi = []
