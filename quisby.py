@@ -468,12 +468,13 @@ if __name__ == "__main__":
             shutil.copy("./quisby/example.ini", util.config_location)
     else:
         util.config_location = args.config
-    custom_logger.info("Config path : " + util.config_location)
-    check_config_file(util.config_location)
-    custom_logger.info("Health check complete...")
+
     print("**********************************************************************************************")
     print("**********************************************************************************************")
     if args.process:
+        custom_logger.info("Config path : " + util.config_location)
+        check_config_file(util.config_location, "process")
+        custom_logger.info("Health check complete...")
         proc_list = []
         exclude_list = []
         if args.process_list:
@@ -485,6 +486,9 @@ if __name__ == "__main__":
         reduce_data(proc_list, noti_flag, exclude_list)
         exit(0)
     elif args.compare:
+        custom_logger.info("Config path : " + util.config_location)
+        check_config_file(util.config_location, "compare")
+        custom_logger.info("Health check complete...")
         comp_list = []
         exclude_list = []
         if args.compare_list:
