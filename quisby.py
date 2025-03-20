@@ -461,11 +461,8 @@ if __name__ == "__main__":
         noti_flag = False
 
     if not args.config:
-        custom_logger.warning("No configuration path mentioned. Using default. ")
-        home_dir = os.getenv("HOME")
-        util.config_location = home_dir + "/.quisby/config/config.ini"
-        if not os.path.exists(util.config_location):
-            shutil.copy("./quisby/example.ini", util.config_location)
+        custom_logger.error("No configuration path mentioned.")
+        exit(0)
     else:
         util.config_location = args.config
     custom_logger.info("Config path : " + util.config_location)
