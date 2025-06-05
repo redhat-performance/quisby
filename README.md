@@ -60,7 +60,7 @@ To utilize Google Sheets API, you need to set up a Google Service Account. Follo
 1. Clone the Quisby Repository:
 
 ```bash
-git clone https://github.com/sousinha1997/Quisby.git
+git clone https://github.com/redhat-performance/quisby.git
 ````
 
 2. Navigate to cloned Repository:
