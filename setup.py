@@ -22,7 +22,7 @@ setup(
         'googleapis-common-protos==1.53.0',
         'oauthlib==3.1.1',
         'requests-oauthlib==1.3.0',
-        'requests==2.25.1',
+        'requests==2.32.4',
         'scipy==1.11.4',
     ],
     classifiers=[
