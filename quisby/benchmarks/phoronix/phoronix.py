@@ -189,31 +189,51 @@ def extract_phoronix_data(path, system_name, OS_RELEASE):
     """
     results = []
 
-    # Extract data from file
+    # Extract data from file - accept any CSV file, not just those ending with "results.csv"
     try:
-        if path.endswith("results.csv"):
+        if path.endswith(".csv"):
             with open(path) as file:
-                phoronix_results = file.readlines()
+                lines = file.readlines()
         else:
+            custom_logger.error(f"File {path} is not a CSV file")
             return None
     except Exception as exc:
         custom_logger.error(str(exc))
         return None
 
-    # Extract header and data
-    data_index = 0
-    header = []
-    for index, data in enumerate(phoronix_results):
-        if "Test:BOPs" in data:
-            data_index = index
-            header = data.strip("\n").split(":")
-        else:
-            phoronix_results[index] = data.strip("\n").split(":")
+    # Find the data start marker
+    data_start_index = None
+    for i, line in enumerate(lines):
+        if "Test:BOPs" in line:
+            data_start_index = i
+            break
+    
+    if data_start_index is None:
+        custom_logger.error("Could not find 'Test:BOPs' marker in the file")
+        return None
 
-    # Combine header and data, and append the system name
-    phoronix_results = [header] + phoronix_results[data_index + 1:]
-    results.append([""])
-    results.append([system_name])
-    results.extend(phoronix_results[1:])
+    # Extract header from the marker line
+    header_line = lines[data_start_index].strip()
+    header = header_line.split(":")
+    
+    # Extract data entries (only split data lines on colon, skip metadata)
+    data_entries = []
+    for i in range(data_start_index + 1, len(lines)):
+        line = lines[i].strip()
+        if line:  # Skip empty lines
+            parts = line.split(":")
+            if len(parts) == 2:
+                data_entries.append(parts)
+            else:
+                custom_logger.warning(f"Skipping malformed line {i+1}: '{line}'")
+
+    # Create properly structured results for summary function compatibility
+    # The summary function expects: row[1][0] = system_name, row[i][1] = test_values (i >= 2)
+    results.append([""])  # Empty row for formatting
+    results.append([system_name])  # System identifier row
+    
+    # Transform data entries into the expected format: [test_name, value] -> [test_name, [value]]
+    for test_name, value in data_entries:
+        results.append([test_name, value])
 
     return [results]
