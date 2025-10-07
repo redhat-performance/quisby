@@ -201,36 +201,57 @@ def extract_phoronix_data(path, system_name, OS_RELEASE):
         custom_logger.error(str(exc))
         return None
 
-    # Find the data start marker
-    data_start_index = None
+    # Find the subtest marker to identify which subtest we're processing
+    subtest_start_index = None
+    subtest_name = None
     for i, line in enumerate(lines):
-        if "Test:BOPs" in line:
-            data_start_index = i
+        if line.startswith("# Subtest:"):
+            subtest_start_index = i
+            subtest_name = line.split(":", 1)[1].strip()
             break
     
-    if data_start_index is None:
-        custom_logger.error("Could not find 'Test:BOPs' marker in the file")
+    if subtest_start_index is None:
+        custom_logger.error("Could not find '# Subtest:' marker in the file")
         return None
 
-    # Extract header from the marker line
-    header_line = lines[data_start_index].strip()
+    # Find the header line after the subtest marker
+    header_start_index = None
+    for i in range(subtest_start_index + 1, len(lines)):
+        line = lines[i].strip()
+        if line and not line.startswith("#") and ":" in line:
+            # Check if this looks like a header (contains multiple colons and descriptive terms)
+            parts = line.split(":")
+            if len(parts) >= 2 and any(keyword in line.lower() for keyword in ["test", "average", "deviation", "bops"]):
+                header_start_index = i
+                break
+    
+    if header_start_index is None:
+        custom_logger.error("Could not find header line after subtest marker")
+        return None
+
+    # Extract header from the header line
+    header_line = lines[header_start_index].strip()
     header = header_line.split(":")
     
-    # Extract data entries (only split data lines on colon, skip metadata)
+    # Extract data entries (handle both 2-column and 3-column formats)
     data_entries = []
-    for i in range(data_start_index + 1, len(lines)):
+    for i in range(header_start_index + 1, len(lines)):
         line = lines[i].strip()
-        if line:  # Skip empty lines
+        if line and not line.startswith("#"):  # Skip empty lines and comments
             parts = line.split(":")
-            if len(parts) == 2:
-                data_entries.append(parts)
+            if len(parts) >= 2:
+                # For stress-ng format (Test:Average:Deviation), use the test name and average value
+                # For other formats, use the first two parts
+                test_name = parts[0]
+                test_value = parts[1]
+                data_entries.append([test_name, test_value])
             else:
                 custom_logger.warning(f"Skipping malformed line {i+1}: '{line}'")
 
     # Create properly structured results for summary function compatibility
     # The summary function expects: row[1][0] = system_name, row[i][1] = test_values (i >= 2)
     results.append([""])  # Empty row for formatting
-    results.append([system_name])  # System identifier row
+    results.append([f"{system_name}-{subtest_name}"])  # System identifier row with subtest name
     
     # Transform data entries into the expected format: [test_name, value] -> [test_name, [value]]
     for test_name, value in data_entries:
