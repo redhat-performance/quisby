@@ -189,31 +189,72 @@ def extract_phoronix_data(path, system_name, OS_RELEASE):
     """
     results = []
 
-    # Extract data from file
+    # Extract data from file - accept any CSV file, not just those ending with "results.csv"
     try:
-        if path.endswith("results.csv"):
+        if path.endswith(".csv"):
             with open(path) as file:
-                phoronix_results = file.readlines()
+                lines = file.readlines()
         else:
+            custom_logger.error(f"File {path} is not a CSV file")
             return None
     except Exception as exc:
         custom_logger.error(str(exc))
         return None
 
-    # Extract header and data
-    data_index = 0
-    header = []
-    for index, data in enumerate(phoronix_results):
-        if "Test:BOPs" in data:
-            data_index = index
-            header = data.strip("\n").split(":")
-        else:
-            phoronix_results[index] = data.strip("\n").split(":")
+    # Find the subtest marker to identify which subtest we're processing
+    subtest_start_index = None
+    subtest_name = None
+    for i, line in enumerate(lines):
+        if line.startswith("# Subtest:"):
+            subtest_start_index = i
+            subtest_name = line.split(":", 1)[1].strip()
+            break
+    
+    if subtest_start_index is None:
+        custom_logger.error("Could not find '# Subtest:' marker in the file")
+        return None
 
-    # Combine header and data, and append the system name
-    phoronix_results = [header] + phoronix_results[data_index + 1:]
-    results.append([""])
-    results.append([system_name])
-    results.extend(phoronix_results[1:])
+    # Find the header line after the subtest marker
+    header_start_index = None
+    for i in range(subtest_start_index + 1, len(lines)):
+        line = lines[i].strip()
+        if line and not line.startswith("#") and ":" in line:
+            # Check if this looks like a header (contains multiple colons and descriptive terms)
+            parts = line.split(":")
+            if len(parts) >= 2 and any(keyword in line.lower() for keyword in ["test", "average", "deviation", "bops"]):
+                header_start_index = i
+                break
+    
+    if header_start_index is None:
+        custom_logger.error("Could not find header line after subtest marker")
+        return None
+
+    # Extract header from the header line
+    header_line = lines[header_start_index].strip()
+    header = header_line.split(":")
+    
+    # Extract data entries (handle both 2-column and 3-column formats)
+    data_entries = []
+    for i in range(header_start_index + 1, len(lines)):
+        line = lines[i].strip()
+        if line and not line.startswith("#"):  # Skip empty lines and comments
+            parts = line.split(":")
+            if len(parts) >= 2:
+                # For stress-ng format (Test:Average:Deviation), use the test name and average value
+                # For other formats, use the first two parts
+                test_name = parts[0]
+                test_value = parts[1]
+                data_entries.append([test_name, test_value])
+            else:
+                custom_logger.warning(f"Skipping malformed line {i+1}: '{line}'")
+
+    # Create properly structured results for summary function compatibility
+    # The summary function expects: row[1][0] = system_name, row[i][1] = test_values (i >= 2)
+    results.append([""])  # Empty row for formatting
+    results.append([f"{system_name}-{subtest_name}"])  # System identifier row with subtest name
+    
+    # Transform data entries into the expected format: [test_name, value] -> [test_name, [value]]
+    for test_name, value in data_entries:
+        results.append([test_name, value])
 
     return [results]
