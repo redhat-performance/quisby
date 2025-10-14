@@ -415,7 +415,8 @@ def compare_data(s_list, comp_list, noti_flag, exclude):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Tool to preprocess and visualise datasets")
-    parser.add_argument("--config", type=str, required=False, help="Location to configuration file")
+    default_config_path = os.path.expanduser("~/.quisby/config/config.ini")
+    parser.add_argument("--config", type=str, default=default_config_path, help=f"Location to configuration file (default: {default_config_path})")
     parser.add_argument("--process", action='store_true', help="To preprocess and visualise all benchmarks")
     parser.add_argument("--compare", type=str, required=False, help="To compare and plot two datasets")
     parser.add_argument("--list-benchmarks", action='store_true', help="To list supported benchmarks")
@@ -430,6 +431,11 @@ if __name__ == "__main__":
     supported_benchmarks = ['aim', 'auto_hpl', 'boot', 'coremark', 'coremark_pro', 'etcd', 'fio_run', 'hammerdb_maria',
                             'hammerdb_mssql', 'hammerdb_pg', 'linpack', 'passmark', 'phoronix', 'pig', 'pyperf',
                             'specjbb', 'speccpu', 'streams', 'uperf']
+
+    util.config_location = os.path.expanduser(args.config)
+    if not os.path.exists(util.config_location):
+        custom_logger.error(f"Configuration file not found: {util.config_location}")
+        exit(1)
 
     if args.process_list and args.exclude_list:
         custom_logger.error("Invalid options")
@@ -459,13 +465,7 @@ if __name__ == "__main__":
     noti_flag = True
     if args.no_notify:
         noti_flag = False
-
-    if not args.config:
-        custom_logger.error("No configuration path mentioned.")
-        exit(1)
-    else:
-        util.config_location = args.config
-
+    
     print("**********************************************************************************************")
     print("**********************************************************************************************")
     if args.process:
@@ -504,9 +504,3 @@ if __name__ == "__main__":
             custom_logger.error(str(exc))
             custom_logger.error("Comparison failed. Check arguments.")
             exit(0)
-
-
-
-
-
-
