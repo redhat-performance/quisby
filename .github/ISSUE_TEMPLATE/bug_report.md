@@ -1,3 +1,10 @@
+---
+name: Bug Report
+about: Report an issue or unexpected behavior
+title: ''
+labels: bug
+assignees: ''
+---
 # The problem
 Write a short summary about what the reported problem/enhancement is.
 
