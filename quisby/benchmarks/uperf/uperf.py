@@ -11,6 +11,7 @@ from quisby.util import mk_int, process_instance
 from quisby import custom_logger
 from quisby.benchmarks.coremark.coremark import calc_price_performance
 from quisby.util import read_config
+from quisby.benchmarks.version_util import get_version_info
 
 
 def extract_prefix_and_number(input_string):
@@ -151,8 +152,17 @@ def split_into_parts(data):
     return result
 
 
-def extract_uperf_data(path, system_name):
-    """"""
+def _extract_v1_format(path, system_name, version_info):
+    """
+    Extract uperf data in v1.x format.
+
+    Supports both file paths and URLs.
+
+    Args:
+        path: File path or URL to CSV data
+        system_name: Name of the system being tested
+        version_info: Version information from CSV (may be None for URLs)
+    """
     results = []
     data_position = {}
 
@@ -180,6 +190,10 @@ def extract_uperf_data(path, system_name):
                 metric = line.split(":")[-1].strip()
                 header_line_index.append((i,metric))
 
+    # Add version metadata
+    csv_version = version_info['raw'] if version_info else '1.0'
+    results.append(['CSV_Version', csv_version])
+
     for index,metric in header_line_index:
         data_lines = csv_data[index + 1:index + 4]
         try:
@@ -199,5 +213,45 @@ def extract_uperf_data(path, system_name):
         results.append(["Instance Count", metric])
         results.extend(instance_data)
     return results
+
+
+def extract_uperf_data(path, system_name):
+    """
+    Extract uperf data with version awareness.
+
+    Dispatches to appropriate handler based on CSV version.
+    Supports backward compatibility for older CSV formats.
+    Handles both file paths and URLs.
+
+    Args:
+        path: File path or URL to CSV data
+        system_name: Name of the system being tested
+    """
+    # Get version information from CSV (skip for URLs)
+    version_info = None
+    is_url = path.startswith('http://') or path.startswith('https://')
+
+    if not is_url:
+        version_info = get_version_info(path)
+        normalized_version = version_info['normalized']
+
+        custom_logger.debug(
+            f"Processing uperf CSV version {version_info['raw']} "
+            f"(normalized: {normalized_version})"
+        )
+    else:
+        # URLs don't have version info in metadata
+        normalized_version = '1.0'
+        custom_logger.debug(f"Processing uperf data from URL (assuming v1.0): {path}")
+
+    # Dispatch to version-specific handler
+    if normalized_version in ['1.0', '1.1']:
+        return _extract_v1_format(path, system_name, version_info)
+    else:
+        # Future: Add elif for version '2.0', '3.0', etc.
+        custom_logger.warning(
+            f"Unknown CSV version {normalized_version}, attempting v1.x format"
+        )
+        return _extract_v1_format(path, system_name, version_info)
 
 

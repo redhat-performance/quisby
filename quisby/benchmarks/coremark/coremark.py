@@ -3,6 +3,7 @@ import re
 from quisby import custom_logger
 from quisby.util import read_config, process_instance, mk_int
 from quisby.pricing.cloud_pricing import get_cloud_pricing
+from quisby.benchmarks.version_util import get_version_info
 
 
 # Utility function to extract prefix, number, and suffix from instance names
@@ -203,15 +204,8 @@ def create_summary_coremark_data(results, OS_RELEASE, sorted_results=None):
 
 
 # Extracts and processes CoreMark data from a file
-def extract_coremark_data(path, system_name, OS_RELEASE):
-    """
-    Extracts and processes CoreMark results from a file (CSV format).
-
-    :param path: Path to the file containing benchmarking results
-    :param system_name: The name of the system being benchmarked
-    :param OS_RELEASE: OS release version (e.g., 'Ubuntu-20.04')
-    :return: Processed benchmarking results or None if there was an error
-    """
+def _extract_coremark_v1(path, system_name, OS_RELEASE, version_info):
+    """Extract CoreMark data in v1.x format."""
     results = []
     processed_data = []
 
@@ -227,6 +221,9 @@ def extract_coremark_data(path, system_name, OS_RELEASE):
         custom_logger.error(f"Error reading CSV file '{path}': {str(exc)}")
         return None  # Error reading file
 
+    # Add version metadata
+    csv_version = version_info['raw'] or '1.0'
+
     # Process the CoreMark data
     try:
         data_index = 0
@@ -235,19 +232,30 @@ def extract_coremark_data(path, system_name, OS_RELEASE):
             if "iteration" in data:
                 data_index = index
                 header = data.strip("\n").split(":")
+                # Add CSV Version to header
+                header.append("CSV Version")
             else:
                 coremark_results[index] = data.strip("\n").split(":")
         coremark_results = [header] + coremark_results[data_index + 1:]
 
         # Format the data for report generation
         iteration = 1
+        first_data_row = True
         for row in coremark_results:
             if "test passes" in row:
                 processed_data.append([""])
                 processed_data.append([system_name])
-                processed_data.append([row[0], row[2]])  # System name and test passes
+                # Add csv_version to test passes row
+                test_passes_row = [row[0], row[2], csv_version]
+                processed_data.append(test_passes_row)
+                first_data_row = True  # Reset for next section
             else:
-                processed_data.append([iteration, row[2]])  # Iteration and performance
+                # Add csv_version only to first data row after test passes
+                if first_data_row and len(row) > 2:
+                    processed_data.append([iteration, row[2], csv_version])
+                    first_data_row = False
+                elif len(row) > 2:
+                    processed_data.append([iteration, row[2]])  # Iteration and performance
                 iteration += 1
 
         results.append(processed_data)
@@ -256,3 +264,32 @@ def extract_coremark_data(path, system_name, OS_RELEASE):
         return None
 
     return results
+
+
+def extract_coremark_data(path, system_name, OS_RELEASE):
+    """
+    Extracts and processes CoreMark results from a file (CSV format) with version awareness.
+
+    :param path: Path to the file containing benchmarking results
+    :param system_name: The name of the system being benchmarked
+    :param OS_RELEASE: OS release version (e.g., 'Ubuntu-20.04')
+    :return: Processed benchmarking results or None if there was an error
+    """
+    # Get version information from CSV
+    version_info = get_version_info(path)
+    normalized_version = version_info['normalized']
+
+    custom_logger.debug(
+        f"Processing CoreMark CSV version {version_info['raw']} "
+        f"(normalized: {normalized_version})"
+    )
+
+    # Dispatch to version-specific handler
+    if normalized_version in ['1.0', '1.1']:
+        return _extract_coremark_v1(path, system_name, OS_RELEASE, version_info)
+    else:
+        # Future: Add elif for version '2.0', '3.0', etc.
+        custom_logger.warning(
+            f"Unknown CSV version {normalized_version}, attempting v1.x format"
+        )
+        return _extract_coremark_v1(path, system_name, OS_RELEASE, version_info)

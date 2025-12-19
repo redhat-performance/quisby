@@ -5,6 +5,7 @@ from itertools import groupby
 from quisby import custom_logger
 from quisby.pricing.cloud_pricing import get_cloud_pricing
 from quisby.util import mk_int, process_instance, read_config
+from quisby.benchmarks.version_util import get_version_info
 
 
 def extract_prefix_and_number(input_string):
@@ -123,9 +124,11 @@ def create_summary_specjbb_data(specjbb_data, OS_RELEASE):
     return results
 
 
-def extract_specjbb_data(path, system_name, OS_RELEASE):
-    """"""
-    results = [[""], [system_name],["Warehouses", f"Thrput-{OS_RELEASE}"]]
+def _extract_specjbb_v1(path, system_name, OS_RELEASE, version_info):
+    """Extract SPECJBB data in v1.x format."""
+    csv_version = version_info['raw'] or '1.0'
+    results = [[""], [system_name], ["Warehouses", f"Thrput-{OS_RELEASE}", "CSV Version"]]
+
     # File read
     try:
         if path.endswith(".csv"):
@@ -136,8 +139,9 @@ def extract_specjbb_data(path, system_name, OS_RELEASE):
     except Exception as exc:
         custom_logger.error(str(exc))
         return None, None
+
     data_index = []
-    for index ,data in enumerate(specjbb_results):
+    for index, data in enumerate(specjbb_results):
         if "Warehouses:Bops" in data:
             data_index.append(index)
     specjbb_data = []
@@ -145,21 +149,49 @@ def extract_specjbb_data(path, system_name, OS_RELEASE):
     if len(data_index) == 1:
         # Fetch values from the last index to the end
         line = specjbb_results[data_index[-1]+1:-1]
-        for values in line:
-            specjbb_data.append(values.strip().split(":"))
+        for idx, values in enumerate(line):
+            row = values.strip().split(":")
+            # Add csv_version only to the first data row
+            if idx == 0:
+                row.append(csv_version)
+            specjbb_data.append(row)
     else:
         for i in range(len(data_index) - 1):
             line = specjbb_results[data_index[i]+1:data_index[i+1]-1]
-            for values in line:
-                specjbb_data.append(values.strip().split(":"))
+            for idx, values in enumerate(line):
+                row = values.strip().split(":")
+                # Add csv_version only to the first data row
+                if idx == 0:
+                    row.append(csv_version)
+                specjbb_data.append(row)
             break
 
-    # Fetch values from the last index to the end
-    # line = specjbb_results[data_index[-1]:]
-    #
-    # for values in line:
-    #     specjbb_data.append(values.strip().split(":"))
-    #
-    # specjbb_results[index] = data.strip("\n").split(":")
     results = results + specjbb_data
     return results
+
+
+def extract_specjbb_data(path, system_name, OS_RELEASE):
+    """
+    Extract SPECJBB data with version awareness.
+
+    Dispatches to appropriate handler based on CSV version.
+    Supports backward compatibility for older CSV formats.
+    """
+    # Get version information from CSV
+    version_info = get_version_info(path)
+    normalized_version = version_info['normalized']
+
+    custom_logger.debug(
+        f"Processing SPECJBB CSV version {version_info['raw']} "
+        f"(normalized: {normalized_version})"
+    )
+
+    # Dispatch to version-specific handler
+    if normalized_version in ['1.0', '1.1']:
+        return _extract_specjbb_v1(path, system_name, OS_RELEASE, version_info)
+    else:
+        # Future: Add elif for version '2.0', '3.0', etc.
+        custom_logger.warning(
+            f"Unknown CSV version {normalized_version}, attempting v1.x format"
+        )
+        return _extract_specjbb_v1(path, system_name, OS_RELEASE, version_info)

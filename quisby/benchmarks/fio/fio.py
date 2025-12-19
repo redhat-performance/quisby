@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 
 from quisby import custom_logger
 from quisby.util import read_config
+from quisby.benchmarks.version_util import get_version_info
 
 # TODO: Maybe we can do away with clat, lat, slat
 HEADER_TO_EXTRACT = [
@@ -32,7 +33,7 @@ def split_into_parts(data):
         result.append(temp)
     return result
 
-def extract_csv_data(csv_data):
+def extract_csv_data(csv_data, csv_version=None):
     indexof_all = []
     result = []
     op_value = ""
@@ -51,19 +52,23 @@ def extract_csv_data(csv_data):
     data_lines = csv_data[header_line_index + 1:]
 
     try:
-        for line in data_lines:
+        for idx, line in enumerate(data_lines):
             # Split the values in the format '1:1:1:641169.83'
             values = line.split(":")
             if len(values) == 4:  # If the line contains the expected format
                 njobs, ndisks, iodepth, value = values
-                result.append([f"{op_value}-{size_value}", int(njobs), int(ndisks), int(iodepth), f" {value}", metric])
+                row = [f"{op_value}-{size_value}", int(njobs), int(ndisks), int(iodepth), f" {value}", metric]
+                # Add csv_version only to the first data row
+                if csv_version and idx == 0:
+                    row.append(csv_version)
+                result.append(row)
     except Exception as exc:
         custom_logger.debug(str(exc))
         custom_logger.error("Data format incorrect. Skipping data")
     return result
 
 
-def group_data(run_data, system_name, OS_RELEASE):
+def group_data(run_data, system_name, OS_RELEASE, csv_version=None):
     """ Groups data into similar metric groups
         Parameters
         ----------
@@ -72,16 +77,29 @@ def group_data(run_data, system_name, OS_RELEASE):
         system_name : str
             Machine name
         OS_RELEASE : str
-            Release version of machine"""
+            Release version of machine
+        csv_version : str
+            CSV version for tracking (optional)
+    """
     run_metric = {"1024KiB": ["iops", "lat"], "4KiB": ["lat", "iops"]}
     grouped_data = []
+    first_group = True
     for key, items in groupby(sorted(run_data), key=lambda x: x[0].split("-")):
         for item in items:
             grouped_data.append([""])
             grouped_data.append([system_name, key[0], f"{key[1]}-{item[5]}"])
-            grouped_data.append(["iteration_name", f"{item[5]}-{OS_RELEASE}"])
+            # Add CSV Version to header only for the first group
+            if csv_version and first_group:
+                grouped_data.append(["iteration_name", f"{item[5]}-{OS_RELEASE}", "CSV Version"])
+                first_group = False
+            else:
+                grouped_data.append(["iteration_name", f"{item[5]}-{OS_RELEASE}"])
             row_hash = f"{item[1]}_d-{item[2]}_j-{item[3]}_iod"
-            grouped_data.append([row_hash, item[4]])
+            # Include csv_version in data row if present
+            if len(item) > 6:
+                grouped_data.append([row_hash, item[4], item[6]])
+            else:
+                grouped_data.append([row_hash, item[4]])
     return grouped_data
 
 
@@ -124,7 +142,7 @@ def process_fio_run_result(URL, system_name):
 
 
 def extract_fio_run_data(path, system_name, OS_RELEASE):
-    """Extracts raw data from results location and groups into a specific format
+    """Extracts raw data from results location and groups into a specific format with version awareness.
             Parameters
             ----------
             path : str
@@ -137,15 +155,28 @@ def extract_fio_run_data(path, system_name, OS_RELEASE):
     summary_data = []
     summary_file = path
 
+    # Get version information from CSV
+    version_info = get_version_info(path)
+    normalized_version = version_info['normalized']
+    csv_version = version_info['raw'] or '1.0'
+
+    custom_logger.debug(
+        f"Processing FIO CSV version {version_info['raw']} "
+        f"(normalized: {normalized_version})"
+    )
 
     try:
         with open(path) as csv_file:
             csv_data = csv_file.readlines()
             csv_data = split_into_parts(csv_data)
-            for data in csv_data:
-                results += extract_csv_data(data)
+            for idx, data in enumerate(csv_data):
+                # Pass csv_version only for the first data part
+                if idx == 0:
+                    results += extract_csv_data(data, csv_version)
+                else:
+                    results += extract_csv_data(data)
 
-        return group_data(results, system_name, OS_RELEASE)
+        return group_data(results, system_name, OS_RELEASE, csv_version)
     except Exception as exc:
         custom_logger.error("Unable to find fio path")
         custom_logger.error(str(exc))
