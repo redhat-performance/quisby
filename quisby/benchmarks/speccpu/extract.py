@@ -11,7 +11,7 @@ def _process_speccpu_v1(path, system_name, suite, OS_RELEASE, version_info):
     results = []
 
     with open(path) as csv_file:
-        speccpu_results = list(csv.DictReader(csv_file, delimiter=":"))
+        speccpu_results = list(csv.DictReader(csv_file, delimiter=","))
 
     # Add version metadata
     csv_version = version_info['raw'] or '1.0'

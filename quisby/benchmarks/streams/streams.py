@@ -145,7 +145,7 @@ def _extract_v1_format(path, system_name, OS_RELEASE, version_info):
     for index, data in enumerate(streams_results):
         if "buffer size" in data:
             data_index = index
-        streams_results[index] = data.strip("\n").split(":")
+        streams_results[index] = data.strip("\n").split(",")
 
     socket_number = ""
     proccessed_data = []

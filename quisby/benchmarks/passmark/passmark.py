@@ -178,13 +178,13 @@ def _extract_passmark_v1(path, system_name, OS_RELEASE, version_info):
     data_index = 0
     header = []
     for index, data in enumerate(passmark_results):
-        if "NumTestProcesses:" in data:
-            header = data.strip("\n").split(":")
+        if "NumTestProcesses," in data:
+            header = data.strip("\n").split(",")
             # Add CSV Version to header
             header.append("CSV Version")
             data_index = index
         else:
-            passmark_results[index] = data.strip("\n").split(":")
+            passmark_results[index] = data.strip("\n").split(",")
 
     # Add csv_version only to the first data row
     for idx, row in enumerate(passmark_results[data_index + 1:]):

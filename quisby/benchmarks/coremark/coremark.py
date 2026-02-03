@@ -231,11 +231,11 @@ def _extract_coremark_v1(path, system_name, OS_RELEASE, version_info):
         for index, data in enumerate(coremark_results):
             if "iteration" in data:
                 data_index = index
-                header = data.strip("\n").split(":")
+                header = data.strip("\n").split(",")
                 # Add CSV Version to header
                 header.append("CSV Version")
             else:
-                coremark_results[index] = data.strip("\n").split(":")
+                coremark_results[index] = data.strip("\n").split(",")
         coremark_results = [header] + coremark_results[data_index + 1:]
 
         # Format the data for report generation

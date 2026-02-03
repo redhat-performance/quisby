@@ -40,12 +40,12 @@ def extract_csv_data(csv_data, csv_version=None):
     size_value = ""
     metric = ""
     for i, line in enumerate(csv_data):
-        if line.startswith('# op:'):
-            op_value = line.split(':')[1].strip()
-        elif line.startswith('# size:'):
-            size_value = line.split(':')[1].strip()
-        if line.startswith('njobs:ndisks:iodepth:'):
-            metric = line.split(":")[-1].strip()
+        if line.startswith('# op,'):
+            op_value = line.split(',')[1].strip()
+        elif line.startswith('# size,'):
+            size_value = line.split(',')[1].strip()
+        if line.startswith('njobs,ndisks,iodepth,'):
+            metric = line.split(",")[-1].strip()
             header_line_index = i
             break
 
@@ -53,8 +53,8 @@ def extract_csv_data(csv_data, csv_version=None):
 
     try:
         for idx, line in enumerate(data_lines):
-            # Split the values in the format '1:1:1:641169.83'
-            values = line.split(":")
+            # Split the values in the format '1,1,1,641169.83'
+            values = line.split(",")
             if len(values) == 4:  # If the line contains the expected format
                 njobs, ndisks, iodepth, value = values
                 row = [f"{op_value}-{size_value}", int(njobs), int(ndisks), int(iodepth), f" {value}", metric]

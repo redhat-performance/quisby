@@ -198,13 +198,13 @@ def _extract_phoronix_v1(path, system_name, OS_RELEASE, version_info):
     data_index = 0
     header = []
     for index, data in enumerate(phoronix_results):
-        if "Test:BOPs" in data:
+        if "Test,BOPs" in data:
             data_index = index
-            header = data.strip("\n").split(":")
+            header = data.strip("\n").split(",")
             # Add CSV Version to header
             header.append("CSV Version")
         else:
-            phoronix_results[index] = data.strip("\n").split(":")
+            phoronix_results[index] = data.strip("\n").split(",")
 
     # Add csv_version only to the first data row
     for idx, row in enumerate(phoronix_results[data_index + 1:]):

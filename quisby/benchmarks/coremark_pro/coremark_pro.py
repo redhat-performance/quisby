@@ -50,7 +50,7 @@ def _extract_v1_format(path, system_name, OS_RELEASE, version_info):
     """
     Extract CoreMark-Pro data in v1.x CSV format.
 
-    Format: colon-delimited CSV with # commented metadata
+    Format: comma-delimited CSV with # commented metadata
     """
     try:
         if not path.endswith(".csv"):
@@ -65,9 +65,9 @@ def _extract_v1_format(path, system_name, OS_RELEASE, version_info):
     for line in lines:
         if line.strip().startswith('#') or not line.strip(): continue
         if not header:
-            header = [h.strip() for h in line.strip().split(':')]
+            header = [h.strip() for h in line.strip().split(',')]
         else:
-            data_rows.append([d.strip() for d in line.strip().split(':')])
+            data_rows.append([d.strip() for d in line.strip().split(',')])
 
     if not header or not data_rows: return None
 

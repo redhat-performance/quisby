@@ -150,7 +150,7 @@ def _extract_specjbb_v1(path, system_name, OS_RELEASE, version_info):
         # Fetch values from the last index to the end
         line = specjbb_results[data_index[-1]+1:-1]
         for idx, values in enumerate(line):
-            row = values.strip().split(":")
+            row = values.strip().split(",")
             # Add csv_version only to the first data row
             if idx == 0:
                 row.append(csv_version)
@@ -159,7 +159,7 @@ def _extract_specjbb_v1(path, system_name, OS_RELEASE, version_info):
         for i in range(len(data_index) - 1):
             line = specjbb_results[data_index[i]+1:data_index[i+1]-1]
             for idx, values in enumerate(line):
-                row = values.strip().split(":")
+                row = values.strip().split(",")
                 # Add csv_version only to the first data row
                 if idx == 0:
                     row.append(csv_version)

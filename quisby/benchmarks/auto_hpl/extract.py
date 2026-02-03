@@ -57,13 +57,13 @@ def _extract_v1_format(
         for index, data in enumerate(file_data):
             if "Gflops" in data:
                 data_index = index
-                header_row = data.strip("\n").split(":")
+                header_row = data.strip("\n").split(",")
 
         if not header_row:
             raise KeyError("Missing 'Gflops' in data")
 
         if len(file_data) > data_index+1:
-            data_row = file_data[data_index+1].strip().split(":")
+            data_row = file_data[data_index+1].strip().split(",")
 
         # Check if insufficient data
         if not data_row:

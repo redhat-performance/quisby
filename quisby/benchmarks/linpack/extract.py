@@ -106,7 +106,7 @@ def _extract_v1_format(path, system_name, version_info):
     if summary_file.endswith("csv"):
         try:
             with open(summary_file, 'r') as csv_file:
-                csv_reader = csv.DictReader(csv_file, delimiter=":")
+                csv_reader = csv.DictReader(csv_file, delimiter=",")
                 list_data = list(csv_reader)
                 last_row = list_data[-1]
 

@@ -186,8 +186,8 @@ def _extract_v1_format(path, system_name, version_info):
     header_line_index = []
     for data in csv_reader:
         for i, line in enumerate(data):
-            if line.startswith('Instance_Count:'):
-                metric = line.split(":")[-1].strip()
+            if line.startswith('Instance_Count,'):
+                metric = line.split(",")[-1].strip()
                 header_line_index.append((i,metric))
 
     # Add version metadata
@@ -199,8 +199,8 @@ def _extract_v1_format(path, system_name, version_info):
         try:
             instance_data = []
             for line in data_lines:
-                # Split the values in the format '1:1:1:641169.83'
-                values = line.split(":")
+                # Split the values in the format '1,1,1,641169.83'
+                values = line.split(",")
                 if len(values) == 5:  # If the line contains the expected format
                     intance_count, value, test_type, packet_type, packet_size = values
                     instance_data.append([f"{intance_count}i", value.strip()])
