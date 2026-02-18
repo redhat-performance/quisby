@@ -6,6 +6,7 @@ from quisby.util import mk_int, process_instance
 from quisby import custom_logger
 from quisby.pricing.cloud_pricing import get_cloud_pricing
 from quisby.util import read_config
+from quisby.benchmarks.version_util import get_version_info
 
 
 def stream_sort_data_by_system_family(results):
@@ -123,17 +124,16 @@ def create_summary_streams_data(stream_data, OS_RELEASE):
     return results
 
 
-def extract_streams_data(path, system_name, OS_RELEASE):
+def _extract_v1_format(path, system_name, OS_RELEASE, version_info):
     """
-    Extracts streams data and appends empty list for each seperate stream runs
+    Extract streams data in v1.x format.
 
     :path: stream summary results file from stream_wrapper_benchmark runs
     :system_name: machine name (eg: m5.2xlarge, Standard_D64s_v3)
+    :version_info: Version information from CSV
     """
-
     summary_data = []
     summary_file = path
-
 
     if not os.path.isfile(summary_file):
         return None
@@ -141,14 +141,11 @@ def extract_streams_data(path, system_name, OS_RELEASE):
     with open(path) as file:
         streams_results = file.readlines()
 
-
     data_index = 0
     for index, data in enumerate(streams_results):
         if "buffer size" in data:
             data_index = index
-        streams_results[index] = data.strip("\n").split(":")
-
-    # streams_results = sorted(streams_results[data_index + 1 :], key=lambda x: x[2])
+        streams_results[index] = data.strip("\n").split(",")
 
     socket_number = ""
     proccessed_data = []
@@ -157,6 +154,11 @@ def extract_streams_data(path, system_name, OS_RELEASE):
     memory = ""
     if not streams_results:
         return None
+
+    # Add version metadata at the beginning
+    csv_version = version_info['raw'] or '1.0'
+    proccessed_data.append(['CSV_Version', csv_version])
+
     for i in range(0, length):
         row = streams_results[i]
         if "memory" in row[0]:
@@ -188,6 +190,36 @@ def extract_streams_data(path, system_name, OS_RELEASE):
             proccessed_data[pos - 5].append(memory + "-" + OS_RELEASE)
             proccessed_data[data_pos].extend(row[1:])
     return proccessed_data
+
+
+def extract_streams_data(path, system_name, OS_RELEASE):
+    """
+    Extract streams data with version awareness.
+
+    Dispatches to appropriate handler based on CSV version.
+    Supports backward compatibility for older CSV formats.
+
+    :path: stream summary results file from stream_wrapper_benchmark runs
+    :system_name: machine name (eg: m5.2xlarge, Standard_D64s_v3)
+    """
+    # Get version information from CSV
+    version_info = get_version_info(path)
+    normalized_version = version_info['normalized']
+
+    custom_logger.debug(
+        f"Processing Streams CSV version {version_info['raw']} "
+        f"(normalized: {normalized_version})"
+    )
+
+    # Dispatch to version-specific handler
+    if normalized_version in ['1.0', '1.1']:
+        return _extract_v1_format(path, system_name, OS_RELEASE, version_info)
+    else:
+        # Future: Add elif for version '2.0', '3.0', etc.
+        custom_logger.warning(
+            f"Unknown CSV version {normalized_version}, attempting v1.x format"
+        )
+        return _extract_v1_format(path, system_name, OS_RELEASE, version_info)
 
 
 if __name__ == "__main__":

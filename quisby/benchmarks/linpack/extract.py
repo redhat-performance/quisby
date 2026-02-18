@@ -5,6 +5,7 @@ import os
 import re
 from quisby.pricing.cloud_pricing import get_cloud_pricing, get_cloud_cpu_count
 from quisby.util import read_config
+from quisby.benchmarks.version_util import get_version_info
 
 # Setting up logger for better error tracking and debugging
 logger = logging.getLogger(__name__)
@@ -73,9 +74,9 @@ def linpack_format_data(**kwargs):
     return results
 
 
-def extract_linpack_data(path, system_name):
+def _extract_v1_format(path, system_name, version_info):
     """
-    Extracts Linpack summary data from files and formats it for analysis.
+    Extract Linpack data in v1.x CSV format.
 
     This function handles the extraction of data from Linpack summary files
     and provides information about GFLOPS and the number of cores used.
@@ -83,6 +84,7 @@ def extract_linpack_data(path, system_name):
     Args:
         path (str): Path to the directory containing Linpack summary files.
         system_name (str): Name of the system being tested.
+        version_info (dict): Version information from CSV
 
     Returns:
         tuple: A tuple containing:
@@ -104,7 +106,7 @@ def extract_linpack_data(path, system_name):
     if summary_file.endswith("csv"):
         try:
             with open(summary_file, 'r') as csv_file:
-                csv_reader = csv.DictReader(csv_file, delimiter=":")
+                csv_reader = csv.DictReader(csv_file, delimiter=",")
                 list_data = list(csv_reader)
                 last_row = list_data[-1]
 
@@ -142,4 +144,45 @@ def extract_linpack_data(path, system_name):
             gflops=gflops
         )
 
+    # Add version info to results
+    if results:
+        csv_version = version_info['raw'] or '1.0'
+        for result in results:
+            if isinstance(result, list):
+                result.append(csv_version)
+
     return results
+
+
+def extract_linpack_data(path, system_name):
+    """
+    Extract Linpack data with version awareness.
+
+    Dispatches to appropriate handler based on CSV version.
+    Supports backward compatibility for older CSV formats.
+
+    Args:
+        path (str): Path to the directory containing Linpack summary files.
+        system_name (str): Name of the system being tested.
+
+    Returns:
+        list: Processed Linpack results with version info
+    """
+    # Get version information from CSV
+    version_info = get_version_info(path)
+    normalized_version = version_info['normalized']
+
+    logger.debug(
+        f"Processing Linpack CSV version {version_info['raw']} "
+        f"(normalized: {normalized_version})"
+    )
+
+    # Dispatch to version-specific handler
+    if normalized_version in ['1.0', '1.1']:
+        return _extract_v1_format(path, system_name, version_info)
+    else:
+        # Future: Add elif for version '2.0', '3.0', etc.
+        logger.warning(
+            f"Unknown CSV version {normalized_version}, attempting v1.x format"
+        )
+        return _extract_v1_format(path, system_name, version_info)

@@ -5,6 +5,7 @@ from quisby import custom_logger
 from quisby.util import read_config
 from quisby.pricing.cloud_pricing import get_cloud_pricing
 from quisby.util import process_instance, mk_int
+from quisby.benchmarks.version_util import get_version_info
 
 
 def extract_prefix_and_number(input_string):
@@ -156,15 +157,8 @@ def create_summary_passmark_data(data, OS_RELEASE):
     return ret_results
 
 
-def extract_passmark_data(path, system_name, OS_RELEASE):
-    """
-    Extract and process PassMark benchmark data from a CSV file.
-
-    :param path: Path to the CSV file containing the benchmark results.
-    :param system_name: Name of the system being tested.
-    :param OS_RELEASE: OS release version (e.g., "Ubuntu 20.04").
-    :return: Processed results as a list.
-    """
+def _extract_passmark_v1(path, system_name, OS_RELEASE, version_info):
+    """Extract PassMark data in v1.x format."""
     results = []
 
     # Extract data from file
@@ -178,17 +172,56 @@ def extract_passmark_data(path, system_name, OS_RELEASE):
         custom_logger.error(f"Error reading file {path}: {str(exc)}")
         return None
 
+    # Add version metadata
+    csv_version = version_info['raw'] or '1.0'
+
     data_index = 0
     header = []
     for index, data in enumerate(passmark_results):
-        if "NumTestProcesses:" in data:
-            header = data.strip("\n").split(":")
+        if "NumTestProcesses," in data:
+            header = data.strip("\n").split(",")
+            # Add CSV Version to header
+            header.append("CSV Version")
             data_index = index
         else:
-            passmark_results[index] = data.strip("\n").split(":")
+            passmark_results[index] = data.strip("\n").split(",")
+
+    # Add csv_version only to the first data row
+    for idx, row in enumerate(passmark_results[data_index + 1:]):
+        if idx == 0 and isinstance(row, list):
+            row.append(csv_version)
 
     passmark_results = [header] + passmark_results[data_index + 1:]
     results.append([""])
     results.append([system_name])
     results.extend(passmark_results)
     return [results]
+
+
+def extract_passmark_data(path, system_name, OS_RELEASE):
+    """
+    Extract and process PassMark benchmark data from a CSV file with version awareness.
+
+    :param path: Path to the CSV file containing the benchmark results.
+    :param system_name: Name of the system being tested.
+    :param OS_RELEASE: OS release version (e.g., "Ubuntu 20.04").
+    :return: Processed results as a list.
+    """
+    # Get version information from CSV
+    version_info = get_version_info(path)
+    normalized_version = version_info['normalized']
+
+    custom_logger.debug(
+        f"Processing PassMark CSV version {version_info['raw']} "
+        f"(normalized: {normalized_version})"
+    )
+
+    # Dispatch to version-specific handler
+    if normalized_version in ['1.0', '1.1']:
+        return _extract_passmark_v1(path, system_name, OS_RELEASE, version_info)
+    else:
+        # Future: Add elif for version '2.0', '3.0', etc.
+        custom_logger.warning(
+            f"Unknown CSV version {normalized_version}, attempting v1.x format"
+        )
+        return _extract_passmark_v1(path, system_name, OS_RELEASE, version_info)

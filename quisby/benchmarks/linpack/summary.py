@@ -109,7 +109,18 @@ def create_summary_linpack_data(results, os_release):
         list: The summarized results, including headers and computed values.
     """
     sorted_results = []
-    header = [
+    header_with_version = [
+        [
+            "System",
+            "Cores",
+            f"GFLOPS-{os_release}",
+            f"GFLOP Scaling-{os_release}",
+            "Cost/hr",
+            f"Price-perf-{os_release}",
+            "CSV Version",
+        ]
+    ]
+    header_without_version = [
         [
             "System",
             "Cores",
@@ -123,6 +134,7 @@ def create_summary_linpack_data(results, os_release):
     results = list(filter(None, results))  # Remove any None entries
     sort_data(results)
 
+    first_group = True
     for _, items in group_data(results):
         items = list(items)
         sorted_data = sorted(items, key=lambda x: mk_int(process_instance(x[0], "size")))
@@ -142,6 +154,15 @@ def create_summary_linpack_data(results, os_release):
                 sorted_data[index][3] = format(gflops_scaling, ".4f")
 
         res = [item for item in sorted_data]
-        sorted_results += header + res
+        # Add CSV Version header only for the first group
+        if first_group:
+            sorted_results += header_with_version + res
+            first_group = False
+        else:
+            # Remove csv_version from subsequent group rows to match header
+            for row in res:
+                if len(row) > 6:
+                    row.pop()  # Remove the last element (csv_version)
+            sorted_results += header_without_version + res
 
     return sorted_results

@@ -1,12 +1,9 @@
+import math
 import re
-from itertools import groupby
-
 from quisby import custom_logger
-from quisby.util import read_config
 from quisby.pricing.cloud_pricing import get_cloud_pricing
-
-from quisby.util import process_instance, mk_int
-
+from quisby.util import read_config
+from quisby.benchmarks.version_util import get_version_info
 
 def extract_prefix_and_number(input_string):
     """
@@ -49,6 +46,67 @@ def custom_key(item):
         return "", ""
 
 
+def _extract_v1_format(path, system_name, OS_RELEASE, version_info):
+    """
+    Extract CoreMark-Pro data in v1.x CSV format.
+
+    Format: comma-delimited CSV with # commented metadata
+    """
+    try:
+        if not path.endswith(".csv"):
+            return None
+        with open(path) as file:
+            lines = file.readlines()
+    except Exception as exc:
+        custom_logger.error(f"Unable to open or read file for CoreMark Pro: {path}")
+        return None
+
+    header, data_rows = [], []
+    for line in lines:
+        if line.strip().startswith('#') or not line.strip(): continue
+        if not header:
+            header = [h.strip() for h in line.strip().split(',')]
+        else:
+            data_rows.append([d.strip() for d in line.strip().split(',')])
+
+    if not header or not data_rows: return None
+
+    # Include version info in results
+    csv_version = version_info['raw'] or '1.0'
+    processed_results = [
+        ['System', system_name, OS_RELEASE],
+        ['CSV_Version', csv_version],
+        header
+    ] + data_rows
+    return [processed_results]
+
+
+def extract_coremark_pro_data(path, system_name, OS_RELEASE):
+    """
+    Extract CoreMark-Pro data with version awareness.
+
+    Dispatches to appropriate handler based on CSV version.
+    Supports backward compatibility for older CSV formats.
+    """
+    # Get version information from CSV
+    version_info = get_version_info(path)
+    normalized_version = version_info['normalized']
+
+    custom_logger.debug(
+        f"Processing CoreMark-Pro CSV version {version_info['raw']} "
+        f"(normalized: {normalized_version})"
+    )
+
+    # Dispatch to version-specific handler
+    if normalized_version in ['1.0', '1.1']:
+        return _extract_v1_format(path, system_name, OS_RELEASE, version_info)
+    else:
+        # Future: Add elif for version '2.0', '3.0', etc.
+        custom_logger.warning(
+            f"Unknown CSV version {normalized_version}, attempting v1.x format"
+        )
+        return _extract_v1_format(path, system_name, OS_RELEASE, version_info)
+
 def calc_price_performance(inst, avg):
     """
     Calculate price-perf ratio for an instance based on its cost per hour and performance.
@@ -70,147 +128,54 @@ def calc_price_performance(inst, avg):
         custom_logger.error("Error calculating price-performance!")
     return cost_per_hour, price_perf
 
-
-def group_data(results):
-    """
-    Group data based on cloud type and instance attributes.
-
-    :param results: List of results to group.
-    :return: Grouped results.
-    """
-    cloud_type = read_config("cloud", "cloud_type")
-    if cloud_type == "aws":
-        return groupby(results, key=lambda x: process_instance(x[1][0], "family", "version", "feature", "machine_type"))
-    elif cloud_type == "azure":
-        results = sorted(results, key=lambda x: process_instance(x[1][0], "family", "feature"))
-        return groupby(results, key=lambda x: process_instance(x[1][0], "family", "version", "feature"))
-    elif cloud_type == "gcp":
-        return groupby(results, key=lambda x: process_instance(x[1][0], "family", "version", "sub_family", "feature"))
-    elif cloud_type == "local":
-        return groupby(results, key=lambda x: process_instance(x[1][0], "family"))
-
-
-def sort_data(results):
-    """
-    Sort data based on cloud type and instance attributes.
-
-    :param results: List of results to sort.
-    """
-    cloud_type = read_config("cloud", "cloud_type")
-    if cloud_type == "aws":
-        results.sort(key=lambda x: str(process_instance(x[1][0], "family")))
-    elif cloud_type == "azure":
-        results.sort(key=lambda x: str(process_instance(x[1][0], "family", "version", "feature")))
-    elif cloud_type == "gcp":
-        results.sort(key=lambda x: str(process_instance(x[1][0], "family", "version", "sub_family")))
-
-
 def create_summary_coremark_pro_data(results, OS_RELEASE):
     """
-    Create a summary of the CoreMark Pro data, including price-performance and iteration details.
-
-    :param results: List of benchmark results.
-    :param OS_RELEASE: OS release version (e.g., "Ubuntu 20.04").
-    :return: List of summarized results.
+    Creates a combined summary with both high-level totals AND detailed sub-test scores.
+    Includes CSV version tracking for backward compatibility.
     """
-    ret_results = []
+    final_sheet_data = []
 
-    # Sort and group data
-    results = list(filter(None, results))
-    sort_data(results)
-    results = group_data(results)
+    for result_set in results:
+        if not result_set: continue
 
-    for _, items in results:
-        multi_iter = [["Multi Iterations"], ["System name", "Score-" + OS_RELEASE]]
-        single_iter = [["Single Iterations"], ["System name", "Score-" + OS_RELEASE]]
-        cal_data = [["System name", "Test_passes-" + OS_RELEASE]]
-        items = list(items)
+        system_name = result_set[0][1]
+        csv_version = result_set[1][1] if len(result_set) > 1 and result_set[1][0] == 'CSV_Version' else '1.0'
 
-        # Sort data by instance size
-        sorted_data = sorted(items, key=lambda x: mk_int(process_instance(x[1][0], "size")))
+        # Data rows start after System and CSV_Version metadata
+        header_idx = 2 if csv_version else 1
+        data_rows = result_set[header_idx + 1:]
+        
+        # --- Part 1: Get High-Level Total Scores ---
+        total_multi_score, total_single_score = 0.0, 0.0
+        for row in data_rows:
+            if row[0].lower() == 'score':
+                total_multi_score = float(row[1])
+                total_single_score = float(row[2])
+                break
+        
+        cph, single_pps = calc_price_performance(system_name, total_single_score)
+        _, multi_pps = calc_price_performance(system_name, total_multi_score)
 
-        # Collect cost per hour and price performance data
-        cost_per_hour, price_perf_single, price_perf_multi = [], [], []
-        for item in sorted_data:
-            for index in range(3, len(item)):
-                multi_iter.append([item[1][0], item[index][1]])
-                single_iter.append([item[1][0], item[index][2]])
+        # --- Part 2: Get Detailed Sub-test Scores ---
+        single_iter_details = []
+        multi_iter_details = []
+        for row in data_rows:
+            if row[0].lower() == 'score': continue
+            single_iter_details.append([row[0], float(row[2])])
+            multi_iter_details.append([row[0], float(row[1])])
 
-                try:
-                    cph, ppm = calc_price_performance(item[1][0], item[index][1])
-                    cph, pps = calc_price_performance(item[1][0], item[index][2])
-                except Exception as exc:
-                    custom_logger.error(str(exc))
-                    break
+        # --- Part 3: Assemble All Tables for the Sheet ---
+        # High-Level Summary Tables (include CSV version in first table only for tracking)
+        final_sheet_data.extend([["Single Iterations"], ["System name", f"Score-{OS_RELEASE}", "CSV Version"], [system_name, total_single_score, csv_version], [""]])
+        final_sheet_data.extend([["Multi Iterations"], ["System name", f"Score-{OS_RELEASE}"], [system_name, total_multi_score], [""]])
+        final_sheet_data.extend([["Cost/Hr"], ["System name", "Cost/Hr"], [system_name, cph], [""]])
+        final_sheet_data.extend([["Single Iterations Price-perf"], ["System name", f"Score/$-{OS_RELEASE}"], [system_name, single_pps], [""]])
+        final_sheet_data.extend([["Multi Iterations Price-perf"], ["System name", f"Score/$-{OS_RELEASE}"], [system_name, multi_pps], [""]])
+        
+        # Detailed Sub-test Tables
+        final_sheet_data.extend([["Single Iterations Details"], ["Test", f"Score-{OS_RELEASE}"]] + single_iter_details)
+        final_sheet_data.append([""])
+        final_sheet_data.extend([["Multi Iterations Details"], ["Test", f"Score-{OS_RELEASE}"]] + multi_iter_details)
+        final_sheet_data.append([""])
 
-                price_perf_multi.append([item[1][0], ppm])
-                price_perf_single.append([item[1][0], pps])
-                cost_per_hour.append([item[1][0], cph])
-
-        # Prepare the final result for this item
-        final_results = [[""]]
-        final_results += single_iter
-        final_results.append([""])
-        final_results.append(["Cost/Hr"])
-        final_results += cost_per_hour
-        final_results.extend([[""], ["Single Iterations"]])
-        final_results.append(["Price-perf", f"Score/$-{OS_RELEASE}"])
-        final_results += price_perf_single
-        final_results += [[""]]
-        final_results += multi_iter
-        final_results.extend([[""], ["Multi Iterations"]])
-        final_results.append(["Price-perf", f"Score/$-{OS_RELEASE}"])
-        final_results += price_perf_multi
-        ret_results.extend(final_results)
-
-    return ret_results
-
-
-def extract_coremark_pro_data(path, system_name, OS_RELEASE):
-    """
-    Extract CoreMark Pro data from a CSV file, process it, and return the formatted results.
-
-    :param path: Path to the CSV file containing the benchmark results.
-    :param system_name: Name of the system being tested.
-    :param OS_RELEASE: OS release version (e.g., "Ubuntu 20.04").
-    :return: Processed results.
-    """
-    results = []
-    processed_data = []
-
-    # Extract data from file
-    try:
-        if path.endswith(".csv"):
-            with open(path) as file:
-                coremark_pro_results = file.readlines()
-        else:
-            return None, None
-    except Exception as exc:
-        custom_logger.debug(str(exc))
-        custom_logger.error("Unable to extract data from csv file for CoreMark Pro")
-        return None, None
-
-    data_index = 0
-    header = []
-
-    # Parse the CSV data
-    for index, data in enumerate(coremark_pro_results):
-        if "Test:Multi iterations:Single Iterations:Scaling" in data:
-            data_index = index
-            header = data.strip("\n").split(":")
-        else:
-            coremark_pro_results[index] = data.strip("\n").split(":")
-
-    coremark_pro_results = [header] + coremark_pro_results[data_index + 1:]
-
-    # Format the data into the structure we need
-    for row in coremark_pro_results:
-        if "Test" in row:
-            processed_data.append([""])
-            processed_data.append([system_name])
-            processed_data.append([row[0], row[1], row[2]])
-        elif "Score" in row:
-            processed_data.append(["Score", row[1], row[2]])
-
-    results.append(processed_data)
-    return results
+    return final_sheet_data
